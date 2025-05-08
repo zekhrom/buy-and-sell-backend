@@ -1,23 +1,129 @@
-import { notFound } from "@hapi/boom"
-import { fakeListings } from "./fake-data.js"
+import { notFound } from "@hapi/boom";
+import { fakeListings } from "./fake-data.js";
+import { db } from "../database.js";
 
 export const getAllListingsRoute = {
-  method: 'GET',
-  path: '/api/listings',
+  method: "GET",
+  path: "/api/listings",
   handler: async (req, res) => {
-    return fakeListings
+    const results = await db.query("SELECT * FROM listings", null);
+    if (!results) {
+      throw notFound("No listings found");
+    }
+    return results;
   },
-}
+};
 
 export const getListingRoute = {
-  method: 'GET',
-  path: '/api/listings/{id}',
+  method: "GET",
+  path: "/api/listings/{id}",
   handler: async (req, res) => {
-    const { id } = req.params
-    const listing = fakeListings.find((listing) => listing.id === id)
+    const { id } = req.params;
+    const [listing] = await db.query("SELECT * FROM listings WHERE id = ?", [
+      id,
+    ]);
     if (!listing) {
-      throw notFound(`Listing with id ${id} not found`)
+      throw notFound(`Listing with id ${id} not found`);
     }
-    return listing
+    return listing;
   },
-}
+};
+
+export const addViewToListingRoute = {
+  method: "POST",
+  path: "/api/listings/{id}/view",
+  handler: async (req, res) => {
+    const { id } = req.params;
+    const [listing] = await db.query("SELECT * FROM listings WHERE id = ?", [
+      id,
+    ]);
+    if (!listing) {
+      throw notFound(`Listing with id ${id} not found`);
+    }
+    await db.query("UPDATE listings SET views = views + 1 WHERE id = ?", [id]);
+    const [updatedListing] = await db.query(
+      "SELECT * FROM listings WHERE id = ?",
+      [id],
+    );
+    return updatedListing;
+  },
+};
+
+export const getUserListingsRoute = {
+  method: "GET",
+  path: "/api/users/{userId}/listings",
+  handler: async (req, res) => {
+    const { userId } = req.params;
+    const results = await db.query("SELECT * FROM listings WHERE user_id = ?", [
+      userId,
+    ]);
+    if (!results) {
+      throw notFound(`No listings found for user with id ${userId}`);
+    }
+    return results;
+  },
+};
+
+export const addListingRoute = {
+  method: "POST",
+  path: "/api/listings",
+  handler: async (req, res) => {
+    const { name, description, price = 0 } = req.payload;
+    const userId = 1; //req.auth.credentials
+    const newListing = await db.query(
+      "INSERT INTO listings (name, description, price, user_id, views) VALUES (?, ?, ?, ?, ?)",
+      [name, description, price, userId, 0],
+    );
+    return {
+      id: newListing.insertId,
+      name,
+      description,
+      price,
+      user_id: userId,
+      views: 0,
+    };
+  },
+};
+
+export const updateListingRoute = {
+  method: "PUT",
+  path: "/api/listings/{id}",
+  handler: async (req, res) => {
+    const { id } = req.params;
+    const { name, description, price } = req.payload;
+    const [listing] = await db.query("SELECT * FROM listings WHERE id = ? AND user_id = ?", [
+      id,
+      1, //req.auth.credentials 
+    ]);
+    if (!listing) {
+      throw notFound(`Listing with id ${id} not found`);
+    }
+    await db.query(
+      "UPDATE listings SET name = ?, description = ?, price = ? WHERE id = ?",
+      [name, description, price, id],
+    );
+    const [updatedListing] = await db.query(
+      "SELECT * FROM listings WHERE id = ?",
+      [id],
+    );
+    return updatedListing;
+  },
+};
+
+export const deleteListingRoute = {
+  method: "DELETE",
+  path: "/api/listings/{id}",
+  handler: async (req, res) => {
+    const { id } = req.params;
+    const userId = 1; //req.auth.credentials
+    const [listing] = await db.query("SELECT * FROM listings WHERE id = ? AND user_id = ?", [
+      id,
+      userId,
+    ]);
+    if (!listing) {
+      throw notFound(`Listing with id ${id} not found for the user with id ${userId}`);
+    }
+    await db.query("DELETE FROM listings WHERE id = ? AND user_id = ?", [id, userId]);
+    return { message: `Listing for ${listing.name} deleted!` };
+  },
+};
