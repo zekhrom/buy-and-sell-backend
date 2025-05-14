@@ -16,6 +16,8 @@
   "dependencies": {
     "@hapi/boom": "^10.0.1",
     "@hapi/hapi": "^21.4.0",
+    "firebase-admin": "^13.4.0",
+    "hapi-auth-bearer-token": "^8.0.0",
     "mysql": "^2.18.1",
     "mysql2": "^3.14.1"
   },

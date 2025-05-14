@@ -1,6 +1,6 @@
 import { notFound } from "@hapi/boom";
-import { fakeListings } from "./fake-data.js";
 import { db } from "../database.js";
+import admin from "firebase-admin";
 
 export const getAllListingsRoute = {
   method: "GET",
@@ -51,16 +51,32 @@ export const addViewToListingRoute = {
 
 export const getUserListingsRoute = {
   method: "GET",
-  path: "/api/users/{userId}/listings",
+  path: "/api/user/{userId}/listings",
   handler: async (req, res) => {
     const { userId } = req.params;
-    const results = await db.query("SELECT * FROM listings WHERE user_id = ?", [
-      userId,
-    ]);
-    if (!results) {
-      throw notFound(`No listings found for user with id ${userId}`);
+    const { authtoken } = req.headers;
+    try {
+      if (!authtoken) {
+        throw notFound("No auth token provided");
+      }
+      const decodedToken = await admin.auth().verifyIdToken(authtoken);
+
+      if (decodedToken.uid !== userId) {
+        console.log('decodedToken', decodedToken.uid);
+        throw notFound(`User with id ${userId} not found`);
+      }
+      const results = await db.query("SELECT * FROM listings WHERE user_id = ?", [
+        userId,
+      ]);
+      if (!results) {
+        throw notFound(`No listings found for user with id ${userId}`);
+      }
+      return results;
     }
-    return results;
+    catch (error) {
+      console.error("Error verifying token:", error);
+      throw notFound(`User with id ${userId} not found`);
+    }
   },
 };
 
@@ -69,17 +85,21 @@ export const addListingRoute = {
   path: "/api/listings",
   handler: async (req, res) => {
     const { name, description, price = 0 } = req.payload;
-    const userId = 1; //req.auth.credentials
+    const { authtoken } = req.headers;
+    if (!authtoken) {
+      throw notFound("No auth token provided");
+    }
+    const { uid } = await admin.auth().verifyIdToken(authtoken);
     const newListing = await db.query(
       "INSERT INTO listings (name, description, price, user_id, views) VALUES (?, ?, ?, ?, ?)",
-      [name, description, price, userId, 0],
+      [name, description, price, uid, 0],
     );
     return {
       id: newListing.insertId,
       name,
       description,
       price,
-      user_id: userId,
+      user_id: uid,
       views: 0,
     };
   },
@@ -91,9 +111,14 @@ export const updateListingRoute = {
   handler: async (req, res) => {
     const { id } = req.params;
     const { name, description, price } = req.payload;
+    const { authtoken } = req.headers;
+    if (!authtoken) {
+      throw notFound("No auth token provided");
+    }
+    const { uid } = await admin.auth().verifyIdToken(authtoken);
     const [listing] = await db.query("SELECT * FROM listings WHERE id = ? AND user_id = ?", [
       id,
-      1, //req.auth.credentials 
+      uid,
     ]);
     if (!listing) {
       throw notFound(`Listing with id ${id} not found`);
@@ -115,15 +140,19 @@ export const deleteListingRoute = {
   path: "/api/listings/{id}",
   handler: async (req, res) => {
     const { id } = req.params;
-    const userId = 1; //req.auth.credentials
+    const { authtoken } = req.headers;
+    if (!authtoken) {
+      throw notFound("No auth token provided");
+    }
+    const { uid } = await admin.auth().verifyIdToken(authtoken);
     const [listing] = await db.query("SELECT * FROM listings WHERE id = ? AND user_id = ?", [
       id,
-      userId,
+      uid,
     ]);
     if (!listing) {
-      throw notFound(`Listing with id ${id} not found for the user with id ${userId}`);
+      throw notFound(`Listing with id ${id} not found for the user with id ${uid}`);
     }
-    await db.query("DELETE FROM listings WHERE id = ? AND user_id = ?", [id, userId]);
+    await db.query("DELETE FROM listings WHERE id = ? AND user_id = ?", [id, uid]);
     return { message: `Listing for ${listing.name} deleted!` };
   },
 };
